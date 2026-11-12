@@ -1,9 +1,9 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/cli.ts";
-import { addNote, deleteNote, formatList, NotesError, type Note } from "../src/notes.ts";
+import { addNote, deleteNote, filterByTag, formatList, NotesError, type Note } from "../src/notes.ts";
 
 const DAY = "2026-11-06";
 const tmpFile = () => join(mkdtempSync(join(tmpdir(), "notes-")), "notes.json");
@@ -54,5 +54,74 @@ describe("cli", () => {
 
   it("prints usage for unknown commands", () => {
     expect(run(["fly"], tmpFile(), DAY).code).toBe(2);
+  });
+});
+
+describe("tags (notes)", () => {
+  it("stores normalized tags", () => {
+    const [note] = addNote([], "a", DAY, [" Work ", "work", "Urgent"]);
+    expect(note.tags).toEqual(["work", "urgent"]);
+  });
+
+  it("stores no tags key without tags", () => {
+    expect("tags" in addNote([], "a", DAY)[0]).toBe(false);
+    expect(addNote([], "a", DAY, [])[0]).toEqual({ id: 1, text: "a", created: DAY });
+  });
+
+  it("refuses empty tags", () => {
+    expect(() => addNote([], "a", DAY, ["  "])).toThrow(NotesError);
+    expect(() => addNote([], "a", DAY, [""])).toThrow(NotesError);
+  });
+
+  it("filters by tag case-insensitively and ignores untagged notes", () => {
+    const notes = addNote(addNote([], "plain", DAY), "task", DAY, ["work"]);
+    expect(filterByTag(notes, "WORK").map((n) => n.text)).toEqual(["task"]);
+    expect(filterByTag(notes, "nope")).toEqual([]);
+  });
+
+  it("shows tags in the list", () => {
+    const notes = addNote(addNote([], "plain", DAY), "task", DAY, ["a", "b"]);
+    expect(formatList(notes)).toBe("1. plain (2026-11-06)\n2. task (2026-11-06) [a, b]");
+  });
+});
+
+describe("tags (cli)", () => {
+  const stored = (file: string) => JSON.parse(readFileSync(file, "utf8"));
+
+  it("adds with repeated --tag", () => {
+    const file = tmpFile();
+    expect(run(["add", "--tag", "work", "--tag", "urgent", "write", "report"], file, DAY)).toEqual({ code: 0, out: "Added note 1." });
+    expect(stored(file)[0]).toMatchObject({ text: "write report", tags: ["work", "urgent"] });
+  });
+
+  it("accepts --tag after the text", () => {
+    const file = tmpFile();
+    run(["add", "write", "report", "--tag", "work"], file, DAY);
+    expect(stored(file)[0]).toMatchObject({ text: "write report", tags: ["work"] });
+  });
+
+  it("errors on add --tag without value", () => {
+    const result = run(["add", "hi", "--tag"], tmpFile(), DAY);
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/^error: /);
+  });
+
+  it("lists only matching notes", () => {
+    const file = tmpFile();
+    run(["add", "--tag", "work", "job"], file, DAY);
+    run(["add", "home"], file, DAY);
+    expect(run(["list", "--tag", "work"], file, DAY).out).toBe("1. job (2026-11-06) [work]");
+    expect(run(["list", "--tag", "nope"], file, DAY)).toEqual({ code: 0, out: "No notes yet." });
+  });
+
+  it("lists everything without --tag, including legacy files", () => {
+    const file = tmpFile();
+    writeFileSync(file, JSON.stringify([{ id: 1, text: "old", created: DAY }]));
+    expect(run(["list"], file, DAY).out).toBe("1. old (2026-11-06)");
+    expect(run(["list", "--tag", "x"], file, DAY).out).toBe("No notes yet.");
+  });
+
+  it("errors on list --tag without value", () => {
+    expect(run(["list", "--tag"], tmpFile(), DAY).code).toBe(1);
   });
 });

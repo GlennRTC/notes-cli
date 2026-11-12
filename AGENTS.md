@@ -16,3 +16,4 @@ Node runs the TypeScript directly (type stripping), so there is no build step.
 ## Factory rules
 - Phase state lives in `.factory/` as markdown files. Never put plan or review text in code comments.
 - Only the paths in SCOPE (factory.conf) may change. Do not touch factory.sh, lib/, gates/, .claude/, package.json or this file.
+- The reviewer offers a solution to the failure that leeds to a DENY Veredict.

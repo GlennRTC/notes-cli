@@ -5,6 +5,7 @@ export interface Note {
   id: number;
   text: string;
   created: string; // ISO date, YYYY-MM-DD
+  tags?: string[];
 }
 
 export class NotesError extends Error {}
@@ -20,11 +21,24 @@ export function saveNotes(file: string, notes: Note[]): void {
   writeFileSync(file, JSON.stringify(notes, null, 2) + "\n");
 }
 
-export function addNote(notes: Note[], text: string, today: string): Note[] {
+function normalizeTags(tags: string[]): string[] {
+  const clean = tags.map((t) => t.trim().toLowerCase());
+  if (clean.some((t) => !t)) throw new NotesError("a tag cannot be empty");
+  return [...new Set(clean)];
+}
+
+export function addNote(notes: Note[], text: string, today: string, tags: string[] = []): Note[] {
   const clean = text.trim();
   if (!clean) throw new NotesError("a note needs some text");
   const id = notes.reduce((max, n) => Math.max(max, n.id), 0) + 1;
-  return [...notes, { id, text: clean, created: today }];
+  const note: Note = { id, text: clean, created: today };
+  if (tags.length > 0) note.tags = normalizeTags(tags);
+  return [...notes, note];
+}
+
+export function filterByTag(notes: Note[], tag: string): Note[] {
+  const wanted = tag.trim().toLowerCase();
+  return notes.filter((n) => n.tags?.includes(wanted) ?? false);
 }
 
 export function deleteNote(notes: Note[], id: number): Note[] {
@@ -32,7 +46,12 @@ export function deleteNote(notes: Note[], id: number): Note[] {
   return notes.filter((n) => n.id !== id);
 }
 
+function formatNote(n: Note): string {
+  const tags = n.tags && n.tags.length > 0 ? ` [${n.tags.join(", ")}]` : "";
+  return `${n.id}. ${n.text} (${n.created})${tags}`;
+}
+
 export function formatList(notes: Note[]): string {
   if (notes.length === 0) return "No notes yet.";
-  return notes.map((n) => `${n.id}. ${n.text} (${n.created})`).join("\n");
+  return notes.map(formatNote).join("\n");
 }
